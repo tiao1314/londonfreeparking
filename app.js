@@ -326,37 +326,28 @@ function renderList() {
       ? haversine(state.userLocation.lat, state.userLocation.lng, spot.coords[0], spot.coords[1])
       : null;
 
-    const badgeHTML = {
-      free:       `<span class="badge badge-free"><span class="badge-dot"></span>Free Now</span>`,
-      soon:       `<span class="badge badge-soon">⏱ Free after ${formatTime12(spot.freeAfter)}</span>`,
-      restricted: `<span class="badge badge-restricted">🔴 Restricted</span>`,
-      paid:       `<span class="badge badge-paid">💳 Paid Only</span>`,
-      open:       `<span class="badge badge-open">🔵 Open</span>`,
+    const badgeLabel = {
+      free:       'Free Now',
+      soon:       `After ${formatTime12(spot.freeAfter)}`,
+      restricted: 'Restricted',
+      paid:       'Paid',
+      open:       'Open',
     }[status.code];
 
-    const countdownHTML = status.code === 'soon' && status.minsUntil
-      ? `<div class="card-countdown">⏳ ${Math.floor(status.minsUntil/60)}h ${status.minsUntil%60}m</div>`
-      : (status.code === 'restricted' && spot.freeAfter
-          ? `<div class="card-countdown" style="color:var(--text-muted)">Free after ${formatTime12(spot.freeAfter)}</div>`
-          : '');
+    const distHTML = dist !== null
+      ? `<div class="card-distance has-dist">${formatDist(dist)}</div>`
+      : '';
 
-    return `<div class="parking-card status-${status.code} ${state.selectedId === spot.id ? 'selected' : ''}"
+    return `<div class="parking-card ${state.selectedId === spot.id ? 'selected' : ''}"
                  data-id="${spot.id}" onclick="selectSpot(${spot.id})">
-      <div class="card-header">
+      <div class="card-dot ${status.code}"></div>
+      <div class="card-body">
         <div class="card-name">${spot.name}</div>
-        <div class="card-postcode">${spot.postcode}</div>
+        <div class="card-sub">${spot.borough}</div>
       </div>
-      <div class="card-meta">
-        ${badgeHTML}
-        <span class="borough-tag">${spot.borough}</span>
-      </div>
-      <div class="card-foot">
-        <div class="card-spaces">
-          ${spot.type === 'car-park' ? `🏢 ${spot.spaces.toLocaleString()} spaces` : `🛣 On-Street`}
-        </div>
-        ${dist !== null
-          ? `<div class="card-distance has-dist">📍 ${formatDist(dist)}</div>`
-          : `<div class="card-distance">${countdownHTML}</div>`}
+      <div class="card-right">
+        <span class="badge badge-${status.code}">${badgeLabel}</span>
+        ${distHTML}
       </div>
     </div>`;
   }).join('');
@@ -1093,9 +1084,9 @@ function updateClock() {
 
   const timeEl = document.getElementById('clockTime');
   const dateEl = document.getElementById('clockDate');
-  if (timeEl) timeEl.textContent = `${h}:${m}:${s}`;
+  if (timeEl) timeEl.textContent = `${h}:${m}`;
   if (dateEl) {
-    dateEl.textContent = now.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+    dateEl.textContent = now.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' });
   }
 }
 

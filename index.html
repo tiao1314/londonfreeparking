@@ -3,196 +3,124 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ParkLDN — London Free Parking Finder</title>
-  <meta name="description" content="Find free parking in London after 6PM and 6:30PM. Live status, TfL camera feeds, and real UK postcodes.">
-  <meta name="theme-color" content="#080812">
+  <title>UAV Parking — London</title>
+  <meta name="description" content="Find free parking in London. Live TfL camera feeds, real-time availability, and bay visualiser.">
+  <meta name="theme-color" content="#000000">
 
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-
-  <!-- Google Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-
-  <!-- App Styles -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 
   <style>
-    /* Leaflet attribution override */
     .leaflet-control-attribution {
-      background: rgba(8,8,18,0.85) !important;
-      color: #6a6a9a !important;
+      background: rgba(0,0,0,0.7) !important;
+      color: rgba(255,255,255,0.3) !important;
       font-size: 9px !important;
       backdrop-filter: blur(4px);
     }
-    .leaflet-control-attribution a { color: #6a6a9a !important; }
+    .leaflet-control-attribution a { color: rgba(255,255,255,0.3) !important; }
     .leaflet-control-zoom a {
-      background: #12122a !important;
-      color: #e2e2f4 !important;
-      border-color: #1e1e42 !important;
+      background: #1c1c1e !important;
+      color: rgba(255,255,255,0.6) !important;
+      border-color: rgba(255,255,255,0.08) !important;
     }
-    .leaflet-control-zoom a:hover { background: #1e1e42 !important; color: #00d4ff !important; }
+    .leaflet-control-zoom a:hover { background: #2c2c2e !important; color: #fff !important; }
   </style>
 </head>
 <body>
 
-<!-- ── LOADING OVERLAY ──────────────────────────────────────────── -->
 <div id="loadingOverlay">
-  <div class="loading-logo">Park<span>LDN</span></div>
+  <div class="loading-logo">UAV<span> Parking</span></div>
   <div class="loading-spinner"></div>
   <div class="loading-text">Loading London parking data…</div>
 </div>
 
-<!-- ── TOAST ──────────────────────────────────────────────────────── -->
 <div id="toast"></div>
 
-<!-- ── APP SHELL ─────────────────────────────────────────────────── -->
 <div id="app">
 
-  <!-- ── HEADER ────────────────────────────────────────────────── -->
   <header id="header">
-
-    <!-- Logo -->
     <div class="logo">
       <div class="logo-icon">🅿</div>
-      <div>
-        <div class="logo-text">Park<span>LDN</span></div>
-        <div class="logo-sub">Free Parking Finder</div>
-      </div>
+      <div class="logo-text">UAV Parking</div>
     </div>
 
-    <!-- Search -->
     <div class="search-wrapper">
       <div class="search-icon">🔍</div>
       <input
         id="searchInput"
         type="text"
-        placeholder="Search by name, postcode or borough…"
+        placeholder="Search by name, postcode or area…"
         autocomplete="off"
         spellcheck="false"
       />
       <div class="search-results" id="searchResults"></div>
     </div>
 
-    <!-- Right section -->
     <div class="header-right">
       <div class="live-clock">
-        <div class="clock-time" id="clockTime">--:--:--</div>
-        <div class="clock-date" id="clockDate">Loading…</div>
+        <div class="clock-time" id="clockTime">--:--</div>
+        <div class="clock-date" id="clockDate"></div>
       </div>
-      <button class="btn-locate" onclick="locateMe()">
-        📍 <span>Near Me</span>
-      </button>
+      <button class="btn-locate" onclick="locateMe()">📍 Near Me</button>
     </div>
-
   </header>
 
-  <!-- ── MAIN ──────────────────────────────────────────────────── -->
   <div id="main">
 
-    <!-- ── SIDEBAR ──────────────────────────────────────────── -->
     <aside id="sidebar">
+      <div class="drag-handle"></div>
 
-      <!-- Filters -->
       <div class="filter-bar">
-        <div class="filter-title">Filter by Status</div>
         <div class="filter-pills">
-          <div class="pill active-all" data-filter="all">
-            <span class="pill-dot" style="background:var(--accent)"></span>All Locations
-          </div>
-          <div class="pill" data-filter="free">
-            <span class="pill-dot"></span>Free Now
-          </div>
-          <div class="pill" data-filter="6pm">
-            Free after 6 PM
-          </div>
-          <div class="pill" data-filter="6:30pm">
-            Free after 6:30 PM
-          </div>
+          <div class="pill active-all" data-filter="all">All</div>
+          <div class="pill" data-filter="free">Free Now</div>
+          <div class="pill" data-filter="6pm">After 6 PM</div>
+          <div class="pill" data-filter="6:30pm">After 6:30 PM</div>
         </div>
       </div>
 
-      <!-- Meta bar -->
       <div class="sidebar-meta">
-        <div class="results-count"><strong>25</strong> locations found</div>
+        <div class="results-count"><strong>25</strong> locations</div>
         <select class="sort-select" id="sortSelect">
-          <option value="name">Sort: A–Z</option>
-          <option value="status">Sort: Status</option>
-          <option value="distance">Sort: Distance</option>
+          <option value="name">A–Z</option>
+          <option value="status">Status</option>
+          <option value="distance">Distance</option>
         </select>
       </div>
 
-      <!-- Parking List -->
-      <div id="parkingList">
-        <!-- Cards injected by JS -->
-      </div>
-
+      <div id="parkingList"></div>
     </aside>
 
-    <!-- ── MAP AREA ────────────────────────────────────────── -->
     <div id="mapContainer">
-
-      <!-- Leaflet Map -->
       <div id="map"></div>
 
-      <!-- Map Legend -->
       <div class="map-overlay" id="mapLegend">
-        <div class="legend-title">Parking Status</div>
-        <div class="legend-item">
-          <div class="legend-dot free"></div>
-          <span>Free Now</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot soon-6pm"></div>
-          <span>Free after 6 PM</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot soon-630pm"></div>
-          <span>Free after 6:30 PM</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot restricted"></div>
-          <span>Restricted</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot paid-only"></div>
-          <span>Paid Only</span>
-        </div>
+        <div class="legend-title">Status</div>
+        <div class="legend-item"><div class="legend-dot free"></div><span>Free Now</span></div>
+        <div class="legend-item"><div class="legend-dot soon-6pm"></div><span>After 6 PM</span></div>
+        <div class="legend-item"><div class="legend-dot soon-630pm"></div><span>After 6:30 PM</span></div>
+        <div class="legend-item"><div class="legend-dot restricted"></div><span>Restricted</span></div>
+        <div class="legend-item"><div class="legend-dot paid-only"></div><span>Paid</span></div>
       </div>
 
-      <!-- TfL Camera Badge -->
-      <div class="map-overlay" id="cameraBadge" onclick="showToast('Click a parking spot to see nearby TfL camera feed')">
-        <div class="camera-pulse"></div>
-        <div>
-          <div class="camera-label">TfL Cameras</div>
-          <div class="camera-sub" id="cameraCount">Loading…</div>
-        </div>
-      </div>
+      <!-- camera badge hidden via CSS — no longer shown on map -->
+      <div id="cameraBadge"></div>
 
-      <!-- Detail Panel (overlays map on desktop, slides from right) -->
       <div id="detailPanel">
-        <!-- Content injected when a spot is selected -->
-        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);flex-direction:column;gap:12px">
-          <span style="font-size:40px">🅿</span>
-          <p style="font-size:13px">Select a parking spot to view details</p>
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:rgba(255,255,255,0.2);flex-direction:column;gap:10px">
+          <span style="font-size:36px">🅿</span>
+          <p style="font-size:12px">Select a parking spot</p>
         </div>
       </div>
+    </div>
 
-    </div><!-- /mapContainer -->
+  </div>
+</div>
 
-  </div><!-- /main -->
-
-</div><!-- /app -->
-
-<!-- Mobile toggle button -->
 <button class="sidebar-toggle" id="sidebarToggle">🅿 View List</button>
 
-<!-- ── SCRIPTS ─────────────────────────────────────────────────── -->
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
-<!-- App Data & Logic -->
 <script src="data.js"></script>
 <script src="app.js"></script>
 
