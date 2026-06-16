@@ -16,6 +16,8 @@ const state = {
   clockTimer: null,
   cameras: [],          // TfL JamCam objects loaded at startup
   camerasLoaded: false,
+  carParks: [],         // TfL car park occupancy data
+  carParksLoaded: false,
 };
 
 // ── TFL JAMCAM API ────────────────────────────────────────────────
@@ -53,6 +55,40 @@ async function initTfLCameras() {
     state.camerasLoaded = true;
     updateCameraBadge();
   }
+}
+
+async function initTfLOccupancy() {
+  try {
+    const res = await fetch('https://api.tfl.gov.uk/Occupancy/CarPark');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.carParks = data.map(cp => {
+      const bays = (cp.carParkOccupancy?.[0]?.bays || []).find(b => b.bayType === 'All') || null;
+      return {
+        id: cp.id,
+        name: cp.name,
+        lat: cp.lat,
+        lon: cp.lon,
+        total: bays?.total ?? null,
+        occupied: bays?.occupied ?? null,
+        free: bays?.free ?? null,
+      };
+    });
+    state.carParksLoaded = true;
+    console.log(`Loaded ${state.carParks.length} TfL car park occupancy feeds`);
+  } catch (e) {
+    console.warn('TfL Car Park Occupancy API unavailable:', e.message);
+  }
+}
+
+function getNearestTfLCarPark(spot, maxDist = 800) {
+  if (!state.carParks.length) return null;
+  let nearest = null, minDist = Infinity;
+  for (const cp of state.carParks) {
+    const d = haversine(spot.coords[0], spot.coords[1], cp.lat, cp.lon);
+    if (d < minDist && d < maxDist) { minDist = d; nearest = { ...cp, dist: Math.round(d) }; }
+  }
+  return nearest;
 }
 
 function getNearestCamera(spot, maxDist = 700) {
@@ -378,9 +414,9 @@ function deselectSpot() {
 
 // ── PARKING SPACE VISUALISER ──────────────────────────────────────
 const CAR_SIZES = {
-  city:     { w: 1.65, l: 3.60, label: 'City Car',  example: 'Mini / Smart',    color: '#00ff9d', fit: 96 },
-  standard: { w: 1.80, l: 4.45, label: 'Standard',  example: 'Golf / Focus',    color: '#ffaa00', fit: 70 },
-  suv:      { w: 2.00, l: 4.90, label: 'SUV / 4x4', example: 'Range Rover',     color: '#ff5533', fit: 32 },
+  city:     { w: 1.65, l: 3.60, label: 'City Car',  example: 'Mini / Smart',  color: '#30d158', fit: 96 },
+  standard: { w: 1.80, l: 4.45, label: 'Standard',  example: 'Golf / Focus',  color: '#007aff', fit: 70 },
+  suv:      { w: 2.00, l: 4.90, label: 'SUV / 4x4', example: 'Range Rover',   color: '#ff9f0a', fit: 32 },
 };
 
 const BAY_W = 2.4, BAY_L = 4.8;  // metres, standard UK bay
@@ -392,42 +428,17 @@ function carPxDims(size) {
   return { w: Math.round(c.w * PX_PER_M), h: Math.round(c.l * PX_PER_M) };
 }
 
-function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
 function makeCarSVG(size, color) {
-  const c10 = hexToRgba(color, 0.10), c22 = hexToRgba(color, 0.22);
-  const c35 = hexToRgba(color, 0.35), c55 = hexToRgba(color, 0.55);
-  const c40 = hexToRgba(color, 0.40), stroke4 = hexToRgba(color, 0.40);
-  return `<svg viewBox="0 0 56 100" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;filter:drop-shadow(0 0 7px ${hexToRgba(color,0.67)})">
-    <rect x="5" y="8" width="46" height="84" rx="10" fill="${c10}" stroke="${color}" stroke-width="2"/>
-    <rect x="10" y="14" width="36" height="17" rx="5" fill="${c55}"/>
-    <rect x="10" y="26" width="36" height="35" rx="5" fill="${c22}"/>
-    <rect x="10" y="70" width="36" height="12" rx="4" fill="${c35}"/>
-    <ellipse cx="14" cy="10" rx="5" ry="3.5" fill="rgba(255,255,180,0.53)"/>
-    <ellipse cx="42" cy="10" rx="5" ry="3.5" fill="rgba(255,255,180,0.53)"/>
-    <ellipse cx="14" cy="90" rx="5" ry="3.5" fill="rgba(255,50,50,0.53)"/>
-    <ellipse cx="42" cy="90" rx="5" ry="3.5" fill="rgba(255,50,50,0.53)"/>
-    <rect x="0"  y="17" width="9" height="16" rx="3" fill="#0a0a1a" stroke="${stroke4}" stroke-width="1.5"/>
-    <rect x="47" y="17" width="9" height="16" rx="3" fill="#0a0a1a" stroke="${stroke4}" stroke-width="1.5"/>
-    <rect x="0"  y="67" width="9" height="16" rx="3" fill="#0a0a1a" stroke="${stroke4}" stroke-width="1.5"/>
-    <rect x="47" y="67" width="9" height="16" rx="3" fill="#0a0a1a" stroke="${stroke4}" stroke-width="1.5"/>
+  return `<svg viewBox="0 0 56 100" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%">
+    <rect x="5" y="8" width="46" height="84" rx="10" fill="${color}18" stroke="${color}" stroke-width="1.5"/>
+    <rect x="10" y="14" width="36" height="17" rx="5" fill="${color}55"/>
+    <rect x="10" y="26" width="36" height="35" rx="5" fill="${color}22"/>
+    <rect x="10" y="70" width="36" height="12" rx="4" fill="${color}44"/>
+    <rect x="0"  y="17" width="9" height="16" rx="3" fill="#111" stroke="${color}44" stroke-width="1"/>
+    <rect x="47" y="17" width="9" height="16" rx="3" fill="#111" stroke="${color}44" stroke-width="1"/>
+    <rect x="0"  y="67" width="9" height="16" rx="3" fill="#111" stroke="${color}44" stroke-width="1"/>
+    <rect x="47" y="67" width="9" height="16" rx="3" fill="#111" stroke="${color}44" stroke-width="1"/>
   </svg>`;
-}
-
-function makeIonParticles(color) {
-  return Array.from({ length: 14 }, (_, i) => {
-    const x  = (Math.random() * 38 + 2).toFixed(1);
-    const sz = (3 + Math.random() * 5).toFixed(1);
-    const dl = (i * 0.07).toFixed(2);
-    const dr = (0.7 + Math.random() * 0.6).toFixed(2);
-    const dy = (40 + Math.random() * 80).toFixed(0);
-    return `<div class="ion-p" style="left:calc(50% + ${x}px);width:${sz}px;height:${sz}px;` +
-           `background:${color};box-shadow:0 0 6px ${color};` +
-           `animation-delay:${dl}s;animation-duration:${dr}s;--dy:${dy}px"></div>`;
-  }).join('');
 }
 
 function makeSpaceVisualizerHTML(spot, camera) {
@@ -441,40 +452,27 @@ function makeSpaceVisualizerHTML(spot, camera) {
   <div class="parking-visualizer" id="parkingViz">
     <div class="viz-header">
       <div class="viz-view-tabs">
-        <button class="viz-view-btn active" onclick="switchVizView('bay',this)">📐 Bay</button>
-        <button class="viz-view-btn" onclick="switchVizView('live',this)">📷 Live${camera ? '' : ' (no cam)'}</button>
+        <button class="viz-view-btn active" onclick="switchVizView('bay',this)">Bay</button>
+        <button class="viz-view-btn" onclick="switchVizView('live',this)">Camera${camera ? '' : ' (n/a)'}</button>
       </div>
       <div class="car-size-tabs">
-        <button class="car-size-btn" onclick="setCarSize('city',this)">🏎 City</button>
-        <button class="car-size-btn active" onclick="setCarSize('standard',this)">🚗 Std</button>
-        <button class="car-size-btn" onclick="setCarSize('suv',this)">🚙 SUV</button>
+        <button class="car-size-btn" onclick="setCarSize('city',this)">City</button>
+        <button class="car-size-btn active" onclick="setCarSize('standard',this)">Standard</button>
+        <button class="car-size-btn" onclick="setCarSize('suv',this)">SUV</button>
       </div>
     </div>
 
-    <!-- BAY VIEW -->
     <div class="viz-body" id="vizBayView">
-      <!-- LEFT: top-down bay scene -->
       <div class="bay-scene-col">
         <div class="bay-scene" style="height:${SCENE_H + 32}px">
           <div class="bay-road-ctx">
-            <!-- road approach arrows -->
             <div class="road-approach">
               <span class="ra">↑</span><span class="ra">↑</span><span class="ra">↑</span>
             </div>
-            <!-- bay box -->
             <div class="bay-box" id="bayBox" style="width:${SCENE_W}px;height:${SCENE_H}px">
-              <!-- floor lines -->
               <div class="bay-floor-line left"></div>
               <div class="bay-floor-line right"></div>
-              <!-- ion particles (behind car) -->
-              <div class="ion-particles-wrap" id="ionWrap">
-                ${makeIonParticles(car.color)}
-              </div>
-              <!-- ion streak -->
-              <div class="ion-streak" id="ionStreak" style="background:linear-gradient(to bottom,transparent,${car.color}88,transparent)"></div>
-              <!-- parked pulse ring -->
               <div class="park-pulse-ring" id="parkPulse"></div>
-              <!-- car wrapper (animates) -->
               <div class="car-anim-wrap" id="carAnimWrap">
                 <div class="car-box" id="carBox" style="width:${cw}px;height:${ch}px">
                   ${makeCarSVG(defaultSize, car.color)}
@@ -486,12 +484,11 @@ function makeSpaceVisualizerHTML(spot, camera) {
         <button class="viz-replay-btn" onclick="replayCarAnim()">↺ Replay</button>
       </div>
 
-      <!-- RIGHT: size info -->
       <div class="viz-info-col">
         <div class="viz-info-card">
           <div class="vic-row">
             <span class="vic-label">Bay</span>
-            <span class="vic-val">${bayL}m &times; ${bayW}m</span>
+            <span class="vic-val">${bayL}m × ${bayW}m</span>
           </div>
           <div class="vic-row">
             <span class="vic-label" id="vicCarLabel">Car (Standard)</span>
@@ -504,7 +501,7 @@ function makeSpaceVisualizerHTML(spot, camera) {
         </div>
 
         <div class="vic-fit-section">
-          <div class="vic-fit-label" id="vicFitLabel">Fit</div>
+          <div class="vic-fit-label">Fit</div>
           <div class="vic-fit-bar">
             <div class="vic-fit-fill" id="vicFitFill"
                  style="width:${car.fit}%;background:${car.color}"></div>
@@ -541,44 +538,36 @@ function makeSpaceVisualizerHTML(spot, camera) {
       </div>
     </div>
 
-    <!-- LIVE CAMERA VIEW -->
     <div class="viz-body" id="vizLiveView" style="display:none">
       <div class="viz-cam-col">
         ${camera ? `
-        <div class="viz-cam-wrap" id="vizCamWrapInner">
+        <div class="viz-cam-wrap">
           <div class="viz-cam-img-box">
             <img id="vizCamImg"
                  src="${camera.imageUrl}"
-                 crossorigin="anonymous"
                  alt="Live camera"
                  onload="onVizCamLoad(this)"
                  onerror="onVizCamError()"
                  style="width:100%;display:block;opacity:0;transition:opacity 0.4s"/>
-            <canvas id="vizCamCanvas" style="display:none"></canvas>
-            <div class="viz-cam-car-overlay" id="vizCarOverlay">
-              ${makeCarSVG(defaultSize, car.color)}
-            </div>
-            <div class="viz-cam-badge" id="vizCamBadge">🔍 Loading feed…</div>
           </div>
           <div class="viz-cam-meta">
             <span>📷 ${camera.name || camera.id}${camera.dist ? ` · ${camera.dist}m` : ''}</span>
-            <button class="cam-refresh-btn" onclick="refreshVizCam()">⟳ Refresh</button>
+            <button class="cam-refresh-btn" onclick="refreshVizCam()">⟳</button>
           </div>
         </div>` : `
         <div class="viz-cam-wrap">
           <div class="viz-cam-no-feed"><span>📷</span><p>No camera near this location</p></div>
         </div>`}
       </div>
-      <!-- same info col as bay view (shared IDs, updated by setCarSize) -->
       <div class="viz-info-col">
         <div class="viz-info-card">
           <div class="vic-row">
             <span class="vic-label">Bay</span>
-            <span class="vic-val">${bayL}m &times; ${bayW}m</span>
+            <span class="vic-val">${bayL}m × ${bayW}m</span>
           </div>
           <div class="vic-row">
             <span class="vic-label" id="vicCarLabel2">Car (Standard)</span>
-            <span class="vic-val" id="vicCarDims2">${car.l}m x ${car.w}m</span>
+            <span class="vic-val" id="vicCarDims2">${car.l}m × ${car.w}m</span>
           </div>
           <div class="vic-row">
             <span class="vic-label">Example</span>
@@ -617,14 +606,6 @@ window.setCarSize = function(size, btn) {
   // Re-trigger animation
   const wrap = document.getElementById('carAnimWrap');
   if (wrap) { wrap.classList.remove('parked'); void wrap.offsetWidth; wrap.classList.add('parked'); }
-
-  // Refresh ion particles
-  const ionWrap = document.getElementById('ionWrap');
-  if (ionWrap) { ionWrap.innerHTML = makeIonParticles(car.color); }
-
-  // Streak colour
-  const streak = document.getElementById('ionStreak');
-  if (streak) streak.style.background = `linear-gradient(to bottom,transparent,${car.color}88,transparent)`;
 
   // Pulse colour
   const pulse = document.getElementById('parkPulse');
@@ -684,18 +665,8 @@ window.setCarSize = function(size, btn) {
 
 window.replayCarAnim = function() {
   const wrap = document.getElementById('carAnimWrap');
-  const ionWrap = document.getElementById('ionWrap');
   const pulse = document.getElementById('parkPulse');
   if (!wrap) return;
-
-  // Detect current active size to get colour
-  const activeBtn = document.querySelector('.car-size-btn.active');
-  const size = activeBtn?.textContent.toLowerCase().includes('city') ? 'city'
-             : activeBtn?.textContent.toLowerCase().includes('suv')  ? 'suv'
-             : 'standard';
-  const car = CAR_SIZES[size];
-
-  if (ionWrap) { ionWrap.innerHTML = makeIonParticles(car.color); }
   wrap.classList.remove('parked'); void wrap.offsetWidth; wrap.classList.add('parked');
   if (pulse) { pulse.classList.remove('active'); void pulse.offsetWidth; pulse.classList.add('active'); }
 };
@@ -714,39 +685,11 @@ window.switchVizView = function(view, btn) {
 // ── VIZ CAMERA HANDLERS ──────────────────────────────────────────
 window.onVizCamLoad = function(img) {
   img.style.opacity = '1';
-  const badge = document.getElementById('vizCamBadge');
-  if (!badge) return;
-  try {
-    const canvas = document.getElementById('vizCamCanvas') || document.createElement('canvas');
-    canvas.width  = img.naturalWidth  || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    let dark = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const lum = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
-      if (lum < 80) dark++;
-    }
-    const darkRatio = dark / (d.length / 4);
-    if (darkRatio > 0.45) {
-      badge.className = 'viz-cam-badge badge-open';
-      badge.textContent = '🟢 Space likely available';
-    } else {
-      badge.className = 'viz-cam-badge badge-occupied';
-      badge.textContent = '🔴 Space may be occupied';
-    }
-  } catch(e) {
-    badge.className = 'viz-cam-badge';
-    badge.textContent = '👁 Check feed manually';
-  }
 };
 
 window.onVizCamError = function() {
-  const wrap = document.getElementById('vizCamWrap');
-  if (wrap) wrap.innerHTML = '<div class="viz-cam-no-feed"><span>📷</span>Camera feed unavailable</div>';
-  const badge = document.getElementById('vizCamBadge');
-  if (badge) { badge.className = 'viz-cam-badge'; badge.textContent = '⚠️ Feed unavailable'; }
+  const wrap = document.getElementById('vizCamImg');
+  if (wrap) wrap.closest('.viz-cam-wrap').innerHTML = '<div class="viz-cam-no-feed"><span>📷</span><p>Feed unavailable</p></div>';
 };
 
 window.refreshVizCam = function() {
@@ -758,40 +701,10 @@ window.refreshVizCam = function() {
 };
 
 // ── PANEL CAMERA HANDLERS ────────────────────────────────────────
-window.onPanelCamLoad = function(img, id) {
+window.onPanelCamLoad = function(img) {
   img.style.opacity = '1';
   const overlay = document.getElementById('panelCamOverlay');
   if (overlay) overlay.style.display = 'none';
-  const analysisRow  = document.getElementById('camAnalysisRow');
-  const analysisBadge = document.getElementById('camAnalysisBadge');
-  if (!analysisRow || !analysisBadge) return;
-  try {
-    const canvas = document.getElementById('panelCamCanvas');
-    if (!canvas) return;
-    canvas.width  = img.naturalWidth  || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    let dark = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const lum = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
-      if (lum < 80) dark++;
-    }
-    const darkRatio = dark / (d.length / 4);
-    analysisRow.style.display = 'flex';
-    if (darkRatio > 0.45) {
-      analysisBadge.className = 'cam-analysis-badge badge-open';
-      analysisBadge.textContent = '🟢 Road visible — space likely free';
-    } else {
-      analysisBadge.className = 'cam-analysis-badge badge-occupied';
-      analysisBadge.textContent = '🔴 Traffic detected — may be busy';
-    }
-  } catch(e) {
-    analysisRow.style.display = 'flex';
-    analysisBadge.className = 'cam-analysis-badge';
-    analysisBadge.textContent = '👁 Check feed manually (CORS)';
-  }
 };
 
 window.onPanelCamError = function() {
@@ -815,37 +728,33 @@ window.refreshPanelCamera = function() {
 function openDetailPanel(spot) {
   const panel = document.getElementById('detailPanel');
   const status = getStatus(spot);
-  const day = getDayAbbrev();
   const dist = state.userLocation
     ? haversine(state.userLocation.lat, state.userLocation.lng, spot.coords[0], spot.coords[1])
     : null;
-  const camera = getNearestCamera(spot);   // real TfL camera nearest this spot
+  const camera = getNearestCamera(spot);
+  const tflPark = spot.type === 'car-park' ? getNearestTfLCarPark(spot) : null;
   state.currentCamera = camera;
 
-  // Status bar
   const statusConfig = {
-    free:       { icon: '✅', cls: 'free',       msg: 'This spot is free to park right now.' },
-    soon:       { icon: '⏱', cls: 'soon',       msg: `Parking becomes free after ${formatTime12(spot.freeAfter)}.` },
-    restricted: { icon: '🚫', cls: 'restricted', msg: `Restrictions lift after ${formatTime12(spot.freeAfter)}. Use camera to check live availability.` },
-    paid:       { icon: '💳', cls: 'paid',       msg: 'Paid car park. Open now — check camera feed for spaces.' },
-    open:       { icon: '🔵', cls: 'free',       msg: spot.type === 'car-park' ? 'Car park open. Check camera for live space availability.' : 'Available. Verify on live camera feed.' },
+    free:       { cls: 'free',       msg: 'Free to park right now.' },
+    soon:       { cls: 'soon',       msg: `Free after ${formatTime12(spot.freeAfter)}.` },
+    restricted: { cls: 'restricted', msg: `Restricted until ${formatTime12(spot.freeAfter)}.` },
+    paid:       { cls: 'paid',       msg: 'Paid parking — check for available spaces.' },
+    open:       { cls: 'free',       msg: 'Open now.' },
   }[status.code];
 
   const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const scheduleHTML = days.map(d => {
-    const isFreeDay = spot.freeDays.includes(d);
-    const isRestrictedDay = spot.restrictedDays.includes(d);
-    const cls = isFreeDay || !isRestrictedDay ? 'free' : 'restricted';
-    return `<div class="day-block ${cls}">${d.slice(0,1)}</div>`;
+    const cls = spot.freeDays.includes(d) || !spot.restrictedDays.includes(d) ? 'free' : 'restricted';
+    return `<div class="day-block ${cls}">${d[0]}</div>`;
   }).join('');
 
-  // Countdown: build once, update via timer
   const freeAfterMin = parseTime(spot.freeAfter);
   let countdownSection = '';
   if (status.code === 'soon' || status.code === 'restricted') {
     countdownSection = `
       <div class="countdown-widget" id="countdown-widget">
-        <div class="countdown-label">⏳ Time Until Free Parking</div>
+        <div class="countdown-label">Free parking in</div>
         <div class="countdown-display" id="countdown-display">
           <div class="cd-unit"><span class="cd-num" id="cd-h">--</span><span class="cd-label">Hrs</span></div>
           <div class="cd-sep">:</div>
@@ -856,42 +765,41 @@ function openDetailPanel(spot) {
       </div>`;
   }
 
+  const occupancyHTML = tflPark && tflPark.free !== null ? `
+    <div class="info-row">
+      <span class="info-label">Live Spaces</span>
+      <span class="info-value">
+        <strong style="color:var(--green)">${tflPark.free.toLocaleString()} free</strong>
+        <span style="color:var(--text-3)"> / ${tflPark.total?.toLocaleString() ?? '?'}</span>
+      </span>
+    </div>
+    <div class="occ-bar-wrap">
+      <div class="occ-bar-fill" style="width:${Math.round((tflPark.free / tflPark.total) * 100)}%"></div>
+    </div>
+    <p class="occ-source">${tflPark.name}${tflPark.dist ? ` · ${tflPark.dist}m away` : ''} · TfL live data</p>
+  ` : '';
+
   const cameraSection = camera ? `
     <div class="info-section">
-      <div class="info-section-title">📷 Live TfL Camera Feed
-        <button class="cam-refresh-btn" onclick="refreshPanelCamera()" title="Refresh feed">⟳</button>
+      <div class="info-section-title">Live Street View
+        <button class="cam-refresh-btn" onclick="refreshPanelCamera()">⟳</button>
       </div>
       <div class="camera-feed-box">
         <div class="camera-feed-header">
           <span class="camera-live-dot">LIVE</span>
-          <span class="camera-id">${camera.name || camera.id}${camera.dist ? ` · ${camera.dist}m away` : ''}</span>
+          <span class="camera-id">${camera.name || camera.id}${camera.dist ? ` · ${camera.dist}m` : ''}</span>
         </div>
         <div class="camera-img-wrap" id="panelCamWrap">
           <img id="panelCamImg"
                src="${camera.imageUrl}"
-               alt="TfL Camera Feed"
-               crossorigin="anonymous"
-               onload="onPanelCamLoad(this,'${camera.id}')"
+               alt="TfL Camera"
+               onload="onPanelCamLoad(this)"
                onerror="onPanelCamError()"
                style="opacity:0;width:100%;display:block;transition:opacity 0.4s"/>
-          <div class="camera-img-overlay" id="panelCamOverlay">Loading feed…</div>
-          <canvas id="panelCamCanvas" style="display:none"></canvas>
+          <div class="camera-img-overlay" id="panelCamOverlay">Loading…</div>
         </div>
       </div>
-      <div class="cam-analysis-row" id="camAnalysisRow" style="display:none">
-        <span class="cam-analysis-badge" id="camAnalysisBadge"></span>
-        <span class="cam-analysis-note">Based on live image analysis</span>
-      </div>
-      <p style="font-size:11px;color:var(--text-dim);padding:6px 0 0">
-        TfL JamCam · ID ${camera.id} · refreshes every ~60s
-      </p>
-    </div>` : `
-    <div class="info-section">
-      <div class="info-section-title">📷 Live TfL Camera Feed</div>
-      <div class="camera-feed-box">
-        <div class="camera-no-feed"><span>📷</span>No camera within 700m of this spot</div>
-      </div>
-    </div>`;
+    </div>` : '';
 
   const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${spot.coords[0]},${spot.coords[1]}`;
 
@@ -899,23 +807,18 @@ function openDetailPanel(spot) {
     <div class="drag-handle"></div>
     <div class="panel-header">
       <button class="panel-close" onclick="deselectSpot()">✕</button>
-      <div class="panel-type-badge">
-        ${spot.type === 'car-park' ? '🏢 Car Park' : '🛣 On-Street Bays'}
-      </div>
+      <div class="panel-type-badge">${spot.type === 'car-park' ? 'Car Park' : 'On-Street'}</div>
       <div class="panel-name">${spot.name}</div>
       <div class="panel-address">${spot.address}, ${spot.borough}</div>
       <div class="panel-postcode-row">
-        <a class="panel-postcode panel-postcode-link"
+        <a class="panel-postcode-link"
            href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(spot.postcode + ' London UK')}"
-           target="_blank" rel="noopener" title="Search on Google Maps">
-          ${spot.postcode} <span class="postcode-map-icon">🗺</span>
-        </a>
+           target="_blank" rel="noopener">${spot.postcode}</a>
         <button class="btn-copy" id="copyBtn" onclick="copyPostcode('${spot.postcode}')">Copy</button>
       </div>
     </div>
 
     <div class="status-bar ${statusConfig.cls}">
-      <div class="status-icon">${statusConfig.icon}</div>
       <div class="status-text ${statusConfig.cls}">
         <strong>${status.label}</strong>
         <p>${statusConfig.msg}</p>
@@ -929,7 +832,7 @@ function openDetailPanel(spot) {
       ${makeSpaceVisualizerHTML(spot, camera)}
 
       <div class="info-section">
-        <div class="info-section-title">📋 Parking Details</div>
+        <div class="info-section-title">Details</div>
         <div class="info-row">
           <span class="info-label">Type</span>
           <span class="info-value">${spot.bayType}</span>
@@ -938,70 +841,59 @@ function openDetailPanel(spot) {
           <span class="info-label">Capacity</span>
           <span class="info-value">${spot.spaces.toLocaleString()} spaces</span>
         </div>
+        ${occupancyHTML}
         ${spot.freeAfter ? `<div class="info-row">
           <span class="info-label">Free After</span>
-          <span class="info-value green">${formatTime12(spot.freeAfter)}</span>
+          <span class="info-value" style="color:var(--green)">${formatTime12(spot.freeAfter)}</span>
         </div>` : ''}
         ${spot.freeUntil ? `<div class="info-row">
           <span class="info-label">Free Until</span>
-          <span class="info-value orange">${formatTime12(spot.freeUntil)} (next day)</span>
+          <span class="info-value" style="color:var(--orange)">${formatTime12(spot.freeUntil)}</span>
         </div>` : ''}
         ${spot.eveningRate ? `<div class="info-row">
           <span class="info-label">Evening Rate</span>
-          <span class="info-value highlight">${spot.eveningRate}</span>
+          <span class="info-value">${spot.eveningRate}</span>
         </div>` : ''}
         ${dist ? `<div class="info-row">
           <span class="info-label">Distance</span>
-          <span class="info-value highlight">📍 ${formatDist(dist)} · ${formatWalk(dist)}</span>
+          <span class="info-value" style="color:var(--blue)">${formatDist(dist)} · ${formatWalk(dist)}</span>
         </div>` : ''}
       </div>
 
       <div class="info-section">
-        <div class="info-section-title">📅 Weekly Schedule</div>
-        <div class="schedule-grid" style="margin-bottom:8px">${scheduleHTML}</div>
-        <p style="font-size:11px;color:var(--text-muted);line-height:1.5">
-          🟢 Free all day &nbsp; 🔴 Restrictions apply (free after ${formatTime12(spot.freeAfter) || 'N/A'})
-        </p>
-        ${spot.freeDays.length ? `<p style="font-size:11px;color:var(--green);margin-top:4px">Free all day on: ${spot.freeDays.join(', ')}</p>` : ''}
-        ${spot.notes ? `<p style="font-size:11px;color:var(--text-muted);margin-top:6px;padding:8px;background:var(--bg-input);border-radius:6px;line-height:1.5">${spot.notes}</p>` : ''}
+        <div class="info-section-title">Schedule</div>
+        <div class="schedule-grid">${scheduleHTML}</div>
+        ${spot.freeDays.length ? `<p class="schedule-note" style="color:var(--green)">Free all day: ${spot.freeDays.join(', ')}</p>` : ''}
+        ${spot.notes ? `<p class="schedule-note">${spot.notes}</p>` : ''}
       </div>
 
       <div class="info-section">
-        <div class="info-section-title">📍 Location</div>
+        <div class="info-section-title">Location</div>
         <div class="info-row">
           <span class="info-label">Borough</span>
           <span class="info-value">${spot.borough}</span>
         </div>
         <div class="info-row">
           <span class="info-label">Postcode</span>
-          <span class="info-value highlight">${spot.postcode}</span>
+          <span class="info-value" style="color:var(--blue)">${spot.postcode}</span>
         </div>
-        <div class="info-row">
+        ${spot.walkingLandmark ? `<div class="info-row">
           <span class="info-label">Landmark</span>
           <span class="info-value">${spot.walkingLandmark}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">Coordinates</span>
-          <span class="info-value" style="font-family:monospace;font-size:11px">${spot.coords[0].toFixed(4)}, ${spot.coords[1].toFixed(4)}</span>
-        </div>
+        </div>` : ''}
       </div>
 
       ${cameraSection}
 
       <div class="action-buttons">
-        <a class="btn-action btn-directions" href="${gmapsUrl}" target="_blank" rel="noopener">
-          🗺 Directions
-        </a>
-        <button class="btn-action btn-share" onclick="shareSpot(${spot.id})">
-          📤 Share
-        </button>
+        <a class="btn-directions" href="${gmapsUrl}" target="_blank" rel="noopener">Directions</a>
+        <button class="btn-share" onclick="shareSpot(${spot.id})">Share</button>
       </div>
 
     </div>`;
 
   panel.classList.add('open');
 
-  // Kick off the car animation after panel slides in
   setTimeout(() => {
     const wrap = document.getElementById('carAnimWrap');
     const pulse = document.getElementById('parkPulse');
@@ -1009,7 +901,6 @@ function openDetailPanel(spot) {
     if (pulse) setTimeout(() => pulse.classList.add('active'), 1300);
   }, 380);
 
-  // Start countdown timer
   if (state.countdownTimer) clearInterval(state.countdownTimer);
   if (freeAfterMin !== null && (status.code === 'soon' || status.code === 'restricted')) {
     updateCountdown(freeAfterMin);
@@ -1260,6 +1151,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateCameraBadge();
   updateClock();
   initTfLCameras();
+  initTfLOccupancy();
   startPeriodicRefresh();
 
   // Live clock every second
