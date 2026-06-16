@@ -2,23 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>UAV Parking — London</title>
-  <meta name="description" content="Find free parking in London. Live TfL camera feeds, real-time availability, and bay visualiser.">
+  <meta name="description" content="Live TfL car park availability across London. Real-time data from Transport for London.">
   <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 
   <style>
     .leaflet-control-attribution {
       background: rgba(0,0,0,0.7) !important;
-      color: rgba(255,255,255,0.3) !important;
+      color: rgba(255,255,255,0.25) !important;
       font-size: 9px !important;
-      backdrop-filter: blur(4px);
     }
-    .leaflet-control-attribution a { color: rgba(255,255,255,0.3) !important; }
+    .leaflet-control-attribution a { color: rgba(255,255,255,0.25) !important; }
     .leaflet-control-zoom a {
       background: #1c1c1e !important;
       color: rgba(255,255,255,0.6) !important;
@@ -32,7 +33,7 @@
 <div id="loadingOverlay">
   <div class="loading-logo">UAV<span> Parking</span></div>
   <div class="loading-spinner"></div>
-  <div class="loading-text">Loading London parking data…</div>
+  <div class="loading-text">Loading live TfL data…</div>
 </div>
 
 <div id="toast"></div>
@@ -41,16 +42,15 @@
 
   <header id="header">
     <div class="logo">
-      <div class="logo-icon">🅿</div>
+      <div class="logo-icon">P</div>
       <div class="logo-text">UAV Parking</div>
     </div>
 
     <div class="search-wrapper">
-      <div class="search-icon">🔍</div>
       <input
         id="searchInput"
         type="text"
-        placeholder="Search by name, postcode or area…"
+        placeholder="Search car parks…"
         autocomplete="off"
         spellcheck="false"
       />
@@ -58,11 +58,8 @@
     </div>
 
     <div class="header-right">
-      <div class="live-clock">
-        <div class="clock-time" id="clockTime">--:--</div>
-        <div class="clock-date" id="clockDate"></div>
-      </div>
-      <button class="btn-locate" onclick="locateMe()">📍 Near Me</button>
+      <div class="clock-time" id="clockTime">--:--</div>
+      <button class="btn-locate" onclick="locateMe()">Near Me</button>
     </div>
   </header>
 
@@ -74,19 +71,23 @@
       <div class="filter-bar">
         <div class="filter-pills">
           <div class="pill active-all" data-filter="all">All</div>
-          <div class="pill" data-filter="free">Free Now</div>
-          <div class="pill" data-filter="6pm">After 6 PM</div>
-          <div class="pill" data-filter="6:30pm">After 6:30 PM</div>
+          <div class="pill" data-filter="available">Available</div>
+          <div class="pill" data-filter="limited">Limited</div>
+          <div class="pill" data-filter="full">Full</div>
         </div>
       </div>
 
       <div class="sidebar-meta">
-        <div class="results-count"><strong>25</strong> locations</div>
+        <div class="results-count"><strong id="resultsNum">—</strong> car parks</div>
         <select class="sort-select" id="sortSelect">
           <option value="name">A–Z</option>
-          <option value="status">Status</option>
+          <option value="availability">Availability</option>
           <option value="distance">Distance</option>
         </select>
+      </div>
+
+      <div class="disclaimer">
+        Live data from TfL Open Data. Occupancy is an estimate — always check on-site signage.
       </div>
 
       <div id="parkingList"></div>
@@ -96,21 +97,16 @@
       <div id="map"></div>
 
       <div class="map-overlay" id="mapLegend">
-        <div class="legend-title">Status</div>
-        <div class="legend-item"><div class="legend-dot free"></div><span>Free Now</span></div>
-        <div class="legend-item"><div class="legend-dot soon-6pm"></div><span>After 6 PM</span></div>
-        <div class="legend-item"><div class="legend-dot soon-630pm"></div><span>After 6:30 PM</span></div>
-        <div class="legend-item"><div class="legend-dot restricted"></div><span>Restricted</span></div>
-        <div class="legend-item"><div class="legend-dot paid-only"></div><span>Paid</span></div>
+        <div class="legend-title">Spaces</div>
+        <div class="legend-item"><div class="legend-dot free"></div><span>Available</span></div>
+        <div class="legend-item"><div class="legend-dot limited"></div><span>Limited</span></div>
+        <div class="legend-item"><div class="legend-dot full"></div><span>Full</span></div>
       </div>
 
-      <!-- camera badge hidden via CSS — no longer shown on map -->
-      <div id="cameraBadge"></div>
-
       <div id="detailPanel">
-        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:rgba(255,255,255,0.2);flex-direction:column;gap:10px">
-          <span style="font-size:36px">🅿</span>
-          <p style="font-size:12px">Select a parking spot</p>
+        <div class="panel-empty">
+          <div class="panel-empty-icon">P</div>
+          <p>Select a car park</p>
         </div>
       </div>
     </div>

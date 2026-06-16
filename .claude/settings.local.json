@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(open /Users/tiao/Desktop/londonfreeparking/index.html)",
+      "Bash(python3 -m http.server 7749 --bind 127.0.0.1)",
+      "Bash(npx playwright *)",
+      "Bash(python3 -c \"import selenium\")",
+      "Bash(curl -s http://127.0.0.1:7749/index.html)",
+      "Bash(cd /tmp && npx playwright screenshot --browser chromium \"http://127.0.0.1:7749/\" park_home.png 2>&1 | tail -5)",
+      "Read(//private/tmp/**)"
+    ]
+  }
+}
